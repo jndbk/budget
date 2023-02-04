@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+.fixed_header_wide{
+    width: 1300px;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+.fixed_header_wide tbody{
+  display:block;
+  width: 100%;
+  overflow: auto;
+  height: 200px;
+}
+
+.fixed_header_wide thead tr {
+   display: block;
+}
+
+.fixed_header_wide thead {
+  background: black;
+  color:#fff;
+}
+
+.fixed_header_wide th, .fixed_header_wide td {
+  padding: 5px;
+  text-align: left;
+  width: 400px;
+}
+
+.fixed_header{
+    width: 600px;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+.fixed_header tbody{
+  display:block;
+  width: 100%;
+  overflow: auto;
+  height: 200px;
+}
+
+.fixed_header thead tr {
+   display: block;
+}
+
+.fixed_header thead {
+  background: black;
+  color:#fff;
+}
+
+.fixed_header th, .fixed_header td {
+  padding: 5px;
+  text-align: left;
+  width: 200px;
+}
+body {background-color: powderblue;}
+h1   {color: blue;}
+p    {color: red;}
+</style>
+</head>
+
+
+<body>
+Load Expenses<input type="file" id="my-input" multiple onchange="loadExpenses()"/>
+Load Patterns<input type="file" id="getPatterns" onchange="getPatterns()"/>
+<table class="fixed_header_wide">
+  <thead>
+    <tr id="catHeader">
+      <th>Category</th>
+    </tr>
+  </thead>
+  <tbody id="categoryTable">
+  </tbody>
+</table>
+<hr>
+<select id="detailSelect" onchange="populateDetailTable()">
+</select>
+<label id="lenCategory"></label>
+<table class="fixed_header_wide">
+  <thead>
+    <tr>
+      <th>Id</th>
+      <th>Date</th>
+      <th>Description</th>
+      <th>Spent</th>
+      <th>Category</th>
+    </tr>
+  </thead>
+  <tbody id="detailTable">
+  </tbody>
+</table>
+
+<button type="button" onclick="updateDetail()">Update</button>
+<hr>
+<div>
+<table>
+<tr>
+<td>
+<table class="fixed_header">
+  <thead>
+    <tr>
+      <th>Pattern</th>
+      <th>Category</th>
+      <th>Select</th>
+    </tr>
+  </thead>
+  <tbody id="patterns">
+  </tbody>
+</table>
+<input type="text" id="pattern">
+<select id="patternSelect"></select>
+<button type="button" onclick="addPattern()">Add pattern</button>
+<button type="button" onclick="deletePatterns()">Delete patterns</button>
+</td>
+<td>
+<table class="fixed_header">
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>Hide</th>
+      <th>Non-recurring</th>
+      <th>Select</th>
+    </tr>
+  </thead>
+  <tbody id="categories">
+  </tbody>
+</table>
+<input type="text" id="newCategory">
+<button type="button" onclick="addCategory()">Add category</button>
+<button type="button" onclick="updateCategories()">Update categories</button>
+<button type="button" onclick="deleteCategories()">Delete categories</button>
+</td>
+</tr>
+</tbody>
+<tr>
+</table>
+</div>
+
+</body> 
+<script>
+class Expense{
+   constructor(date, category, description, amount, index) {
+      this.date = date
+      this.category = category;
+      this.description = description;
+      this.amount = amount;
+      this.index = index;
+      this.orderId = ''
+   };
+   hash() {
+      return this.description + this.date + this.amount
+   }
+}
+
+var categories = []
+var nonRecurring = []
+var hideCategories = []
+String.prototype.hashCode = function() {
+  var hash = 0, i, chr;
+  if (this.length === 0) return hash;
+  for (i = 0; i < this.length; i++) {
+    chr   = this.charCodeAt(i);
+    hash  = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return hash;
+};
+
+function addCategory() {
+   var newCatElement = document.getElementById("newCategory");
+   categories.push(newCatElement.value)
+   categories.sort()
+   localStorage.setItem("categories", JSON.stringify(categories))
+}
+
+function deleteCategories() {
+   categories = []
+   var catTable = document.getElementById("categories");
+   for(rowIndex in catTable.children) {
+      row = catTable.children[rowIndex]
+      cols = row.cells
+      if(cols) {
+         cat = cols[0].innerHTML
+         if(!cols[3].children[0].checked) {
+            categories.push(cat)
+         }
+      }
+   }
+   localStorage.setItem("categories", JSON.stringify(categories))
+}
+
+function updateCategories() {
+   hideCategories = []
+   nonRecurring = []
+   var catTable = document.getElementById("categories");
+   for(rowIndex in catTable.children) {
+      row = catTable.children[rowIndex]
+      cols = row.cells
+      if(cols) {
+         cat = cols[0].innerHTML
+         if(cols[1].children[0].checked) {
+            hideCategories.push(cat)
+         }
+         if(cols[2].children[0].checked) {
+            nonRecurring.push(cat)
+         }
+      }
+   }
+   localStorage.setItem("hideCategories", JSON.stringify(hideCategories))
+   localStorage.setItem("nonRecurring", JSON.stringify(nonRecurring))
+}
+
+var filePatterns = {}
+function loadFilePatterns() {
+   patstr = localStorage.getItem("filePatterns")
+   if(patstr){
+      filePatterns = JSON.parse(patstr)
+   }
+}
+
+function sortRows(row1, row2) {
+   if(row1 && row2){
+      if(row1[0] > row2[0]) return 1
+      return -1
+   }
+   return 1
+}
+
+function loadPatterns()
+{
+   console.log()
+   var pats = document.getElementById("patterns");
+   while(pats.hasChildNodes())
+   {
+      pats.removeChild(pats.firstChild);
+   }
+   patstr = localStorage.getItem("patterns")
+   if(!patstr) return
+   rows = JSON.parse(patstr)
+    
+   rows.sort(sortRows)
+   for (row in rows) {
+      if(!rows[row]) continue
+      r = pats.insertRow(-1)
+      for (col in rows[row]){
+         c = r.insertCell(-1)
+         c.innerHTML = rows[row][col]
+      }
+      console.log(rows[row][col])
+      var x = document.createElement("INPUT");
+      x.setAttribute("type", "checkbox");
+      x.setAttribute("id", "xxx")
+      var cellCheck = r.insertCell(-1)
+      cellCheck.appendChild(x);
+   }
+   
+}
+
+var dateHeaders = []
+function populateCategoryTable() {
+   var ct = document.getElementById("categoryTable");
+   var headerRow = document.getElementById("catHeader");
+   while(headerRow.hasChildNodes()){
+      headerRow.removeChild(headerRow.firstChild)
+   }
+   while(ct.hasChildNodes()){
+      ct.removeChild(ct.firstChild)
+   }
+   catExpenses = {}
+   // Get date range
+   for (index in fileExpenses) {
+      e = fileExpenses[index]
+      if(!(e.category in catExpenses)) {
+         catExpenses[e.category] = {}
+      }
+   }
+   for (index in fileExpenses) {
+      e = fileExpenses[index]
+      amnt = parseFloat(e.amount)
+      if(amnt == NaN) {
+         amnt = 0
+      }
+      dateFields = e.date.split('/')
+      dateColHead = dateFields[2] + "-" + dateFields[0]
+      if(!(dateColHead in catExpenses[e.category])) {
+         catExpenses[e.category][dateColHead] = amnt
+      } else {
+         catExpenses[e.category][dateColHead] += amnt
+      }
+   }
+   for(cat in catExpenses) {
+      for(dt in catExpenses[cat]) {
+         if(!(dateHeaders.includes(dt))) {
+            dateHeaders.push(dt)
+         }
+      }
+   }
+   h = headerRow.insertCell(-1)
+   h.innerHTML = "Category"
+   dateHeaders.sort()
+   dateHeaders.reverse()
+   totalDates = 0
+   for(i in dateHeaders) {
+      h = headerRow.insertCell(-1)
+      h.innerHTML = dateHeaders[i]
+      totalDates += 1
+      if(totalDates == 12) {
+         break
+      }
+   }
+   h = headerRow.insertCell(-1)
+   h.innerHTML = "Average"
+   h = headerRow.insertCell(-1)
+   h.innerHTML = "Total"
+   sortedCategories = []
+   for(cat in catExpenses) {
+      sortedCategories.push(cat)
+   }
+   sortedCategories.sort()
+   dateNonRecurringTotals = {}
+   for(i in dateHeaders) {
+      dateNonRecurringTotals[dateHeaders[i]] = 0
+   }
+   dateTotals = {}
+   for(i in dateHeaders) {
+      dateTotals[dateHeaders[i]] = 0
+   }
+   numDateHeaders = dateHeaders.length
+   if(numDateHeaders > 12){
+      numDateHeaders = 12
+   }
+   for(catIndex in sortedCategories) {
+      cat = sortedCategories[catIndex]
+      if(hideCategories.includes(cat)) {
+         continue
+      }
+      catTotal = 0
+      r = ct.insertRow(-1) 
+      c = r.insertCell(-1)
+      if(cat == ""){
+         c.innerHTML = "Uncategorized"
+      } else {
+         c.innerHTML = cat
+      }
+      totalDates = 0
+      for(i in dateHeaders) {
+         ce = catExpenses[cat][dateHeaders[i]]
+         c1 = r.insertCell(-1)
+         if(ce) {
+            dateTotals[dateHeaders[i]] += ce
+            if(nonRecurring.includes(cat)){
+               dateNonRecurringTotals[dateHeaders[i]] += ce
+            }
+            catTotal += ce
+            c1.innerHTML = -Math.round(ce *100)/100
+         } else {
+            c1.innerHTML = "0.00" 
+         }
+         totalDates += 1
+         if(totalDates == 12){
+            break
+         }
+      }
+      c1 = r.insertCell(-1)
+      if(catTotal) {
+         c1.innerHTML = -Math.round((catTotal/numDateHeaders) *100)/100
+      } else {
+         c1.innerHTML = "0.00" 
+      }
+      c1 = r.insertCell(-1)
+      if(catTotal) {
+         c1.innerHTML = -Math.round(catTotal *100)/100
+      } else {
+         c1.innerHTML = "0.00" 
+      }
+   }
+   r = ct.insertRow(-1) 
+   c = r.insertCell(-1)
+   c.innerHTML = "Total"
+   sumTotals = 0
+   totalDates = 0
+   for(i in dateHeaders) {
+      c1 = r.insertCell(-1)
+      ce = dateTotals[dateHeaders[i]]
+      sumTotals += ce
+      c1.innerHTML = -Math.round(ce *100)/100
+      totalDates += 1
+      if(totalDates == 12){
+         break
+      }
+   }
+   c1 = r.insertCell(-1)
+   c1.innerHTML = -Math.round((sumTotals/numDateHeaders) *100)/100
+   c1 = r.insertCell(-1)
+   c1.innerHTML = -Math.round(sumTotals *100)/100
+   r = ct.insertRow(-1) 
+   c = r.insertCell(-1)
+   c.innerHTML = "Recurring Total"
+   sumTotals = 0
+   totalDates = 0
+   for(i in dateHeaders) {
+      c1 = r.insertCell(-1)
+      ce = dateTotals[dateHeaders[i]]
+      nrCe = dateNonRecurringTotals[dateHeaders[i]]
+      c1.innerHTML = -Math.round((ce-nrCe) *100)/100
+      sumTotals += (ce-nrCe)
+      totalDates += 1
+      if(totalDates == 12){
+         break
+      }
+   }
+   c1 = r.insertCell(-1)
+   c1.innerHTML = -Math.round((sumTotals/numDateHeaders) *100)/100
+   c1 = r.insertCell(-1)
+   c1.innerHTML = -Math.round(sumTotals *100)/100
+}
+
+function sortExpenses(e1, e2) {
+   if(e1.date == e2.date){
+      if(e1.description < e2.description) {
+         return -1
+      }
+      return 1
+   }
+   if(e1.date < e2.date) {
+      return 1
+   }
+   return -1
+}
+function populateDetailTable() {
+   var detailSelectElement = document.getElementById("detailSelect")
+   var cat = detailSelectElement.value
+   var dt = document.getElementById("detailTable");
+   while(dt.hasChildNodes()){
+      dt.removeChild(dt.firstChild)
+   }
+   expenseList = []
+   for (index in fileExpenses) {
+      e = fileExpenses[index]
+      if(e.index != index) {
+      }
+      if(e.category == cat) {
+         expenseList.push(e)
+      }
+   }
+   expenseList.sort(sortExpenses)
+   for (index in expenseList) {
+      e = expenseList[index]
+      r = dt.insertRow(-1) 
+      c = r.insertCell(-1)
+      c.innerHTML = e.index 
+      c = r.insertCell(-1)
+      c.innerHTML = e.date
+      c1 = r.insertCell(-1)
+      c1.innerHTML = e.description
+      c2 = r.insertCell(-1)
+      c2.innerHTML = -e.amount
+      c3 = r.insertCell(-1)
+      sel = document.createElement("select")
+      var option = document.createElement("option");
+      option.text = ""
+      sel.add(option);
+      for(category in categories) {
+         var option = document.createElement("option");
+         option.text = categories[category];
+         sel.add(option);
+      }
+      sel.value = e.category
+      c3.appendChild(sel)
+      sels.push(sel)
+   }
+   var detailLen = document.getElementById("lenCategory")
+   detailLen.innerHTML = expenseList.length
+}
+
+function updateDetail(){
+   var unmatched = document.getElementById("detailTable");
+   for(row in unmatched.children) {
+      if(!unmatched.children[row]) continue
+      cols = unmatched.rows[row].cells
+      if(cols){
+         index = parseInt(cols[0].textContent)
+         ex = fileExpenses[index]
+         sel = cols[4].childNodes[0]
+         newCat = sel.value
+         if(ex.category != newCat) {
+            ex.category = newCat
+            fileExpenses[index]=ex
+            filePatterns[ex.hash()] = newCat
+         }
+      }
+   }
+   localStorage.setItem("filePatterns", JSON.stringify(filePatterns))
+   parseExpenses()
+}
+
+var sels = []
+var fileExpenses = [];
+var amazonEx = [];
+var amazonOrders = [];
+function parseExpenses() {
+   for(var line in fileExpenses){
+      ex = fileExpenses[line] 
+      if(ex.category == "") {
+         ex.category = lookup(ex)
+      }
+   } 
+   populateCategoryTable()
+   populateDetailTable()
+}
+          
+function lookup(ex) {
+   if(ex.hash() in filePatterns){
+      return filePatterns[ex.hash()]
+   }
+   var patstr = localStorage.getItem("patterns")
+   if(patstr == "") return ""
+   rows = JSON.parse(patstr)
+    
+   for (row in rows) {
+      if(!rows[row]) continue
+      regex = rows[row][0]
+      var re = new RegExp(regex,"i");
+      if (re.test(ex.description)) {
+         return rows[row][1]
+      }
+   }
+   return "";
+}         
+
+function stripQuotedCommas(line) {
+   newLine = ""
+   inQuote = false
+   for(i = 0; i < line.length; ++i) {
+      c = line[i]
+      if(c == "\"") {
+         if(inQuote == false) {
+            inQuote = true
+         } else {
+            inQuote = false
+         }
+      } else if(c == "," && inQuote) {
+      } else {
+         newLine += c
+      }
+   }
+   return newLine
+}
+
+function getExpense(lineIn, fileName) {
+   line = stripQuotedCommas(lineIn)
+   var fields = line.split(',')
+   var ex = null
+   if(fileName.includes("Chase")) {
+      if(fields.length >= 6){
+         ex = new Expense(fields[1], "", fields[2], fields[5], 0)
+      }
+   } else if(fileName.includes("Wells")) {
+      if(fields.length >= 5){
+         ex = new Expense(fields[0].replace(/\"/g,""), "", 
+              fields[4].replace(/\"/g, ""), 
+              fields[1].replace(/\"/g, ""), 0)
+      }
+   } else if (fileName.includes("AmazonOrders")) {
+      if(fields.length >= 21) {
+         ex = new Expense(fields[0], "AmazonOrders", 
+              fields[1], fields[20].replace("$",""))
+      }
+   } else if (fileName.includes("Amazon")) {
+      if(fields.length >= 30) {
+         ex = new Expense(fields[0], "Amazon", 
+              fields[2], fields[29].replace("$",""))
+         ex.orderId = fields[1]
+      }
+   }
+   return ex
+}
+
+function amazonCrossRef(orderId){
+   for(amExIndex in amazonEx) {
+      thisOrderId = amazonEx[amExIndex].orderId
+      if(thisOrderId == orderId){
+         return amazonEx[amExIndex].description
+      }
+   }
+   return orderId
+}
+      
+function amazonLookup()
+{
+   num = 0
+   for(index in fileExpenses) {
+      ex = fileExpenses[index]
+      var re = new RegExp("amazon|amzn","i");
+      if (re.test(ex.description)) {
+         for(amExIndex in amazonOrders) {
+           amEx = amazonOrders[amExIndex] 
+           x = parseFloat(amEx.amount)
+           
+           if(-amEx.amount == ex.amount) {
+              ex.description = amazonCrossRef(amEx.description)
+              num += 1
+           }
+         }
+      }
+   }
+}
+
+function getPatterns() {
+}
+
+function savePatterns() {
+}
+
+var filesLoaded = 0
+function loadExpenses() {
+   var files = document.getElementById("my-input").files;
+
+   for (var i = 0; i < files.length; ++i)
+   {
+      var reader = new FileReader();
+      // file reading started
+      reader.addEventListener('loadstart', function() {
+      });
+
+      // file reading finished successfully
+      reader.addEventListener('load', function(e) {
+          var text = e.target.result;
+          var lines = text.split("\n")
+          for(l in lines) {
+             var line = lines[l]
+             if(line.includes("Transaction")) {
+                continue;
+             }
+             if(l == "") continue
+             if(!l) continue
+             var ex = getExpense(line,files[filesLoaded].name)  
+             if(ex){
+                if(ex.category == "Amazon") {
+                   amazonEx.push(ex)
+                } else if(ex.category == "AmazonOrders") {
+                   amazonOrders.push(ex)
+                } else {
+                   ex.index = fileExpenses.length
+                   //var cat = lookup(ex)
+                   //ex.category = cat
+                   fileExpenses.push(ex)
+                }
+             }
+          }
+          if(e.lengthComputable == true) {
+    	      var percent_read = Math.floor((e.loaded/e.total)*100);
+              if(e.loaded == e.total) {
+                 filesLoaded += 1
+              }
+              if(filesLoaded == files.length) {
+                 amazonLookup()
+                 parseExpenses()
+              }
+          }
+      });
+
+      // file reading failed
+      reader.addEventListener('error', function() {
+          alert('Error : Failed to read file');
+      });
+
+      // file read progress 
+      reader.addEventListener('progress', function(e) {
+      });
+
+      // read as text file
+      reader.readAsText(files[i]);
+   }
+}
+
+function populateCategoriesTable() {
+   hideStr = localStorage.getItem("hideCategories")
+   if(hideStr){
+      hideCategories = JSON.parse(hideStr)
+   }
+   nrStr = localStorage.getItem("nonRecurring")
+   if(nrStr){
+      nonRecurring = JSON.parse(nrStr)
+   }
+   catStr = localStorage.getItem("categories")
+   if(catStr){
+      categories = JSON.parse(catStr)
+   }
+   categories.sort()
+   var catTable = document.getElementById("categories");
+   for(ind in categories) {
+      cat = categories[ind]
+      r = catTable.insertRow()
+      c = r.insertCell(-1)
+      c.innerHTML = cat
+      var hide = document.createElement("INPUT");
+      hide.setAttribute("type", "checkbox");
+      hide.setAttribute("id", "xxx")
+      if(hideCategories.includes(cat)){
+         hide.checked = true
+      }
+      var cellCheck = r.insertCell(-1)
+      cellCheck.appendChild(hide);
+      var nr = document.createElement("INPUT");
+      nr.setAttribute("type", "checkbox");
+      nr.setAttribute("id", "xxx")
+      if(nonRecurring.includes(cat)){
+         nr.checked = true
+      }
+      var cellCheck = r.insertCell(-1)
+      cellCheck.appendChild(nr);
+      var sel = document.createElement("INPUT");
+      sel.setAttribute("type", "checkbox");
+      sel.setAttribute("id", "xxx")
+      var cellCheck = r.insertCell(-1)
+      cellCheck.appendChild(sel);
+   }
+}
+
+function startup() {
+   populateCategoriesTable()
+   var x = document.getElementById("detailSelect");
+   var option = document.createElement("option");
+   option.text = ""
+   x.add(option);
+   for(category in categories) {
+      var x = document.getElementById("detailSelect");
+      var option = document.createElement("option");
+      option.text = categories[category];
+      x.add(option);
+   }
+   for(category in categories) {
+      var x = document.getElementById("patternSelect");
+      var option = document.createElement("option");
+      option.text = categories[category];
+      x.add(option);
+   }
+   loadPatterns()
+   loadFilePatterns()
+}
+    
+window.onload = startup();
+
+function addPattern() {
+   var pattern = document.getElementById("pattern").value;
+   var cat = document.getElementById("patternSelect").value;
+   var pats = document.getElementById("patterns");
+
+   var r = pats.insertRow()
+   var c = r.insertCell(-1)
+   c.innerHTML = pattern 
+   var cellCat = r.insertCell(-1)
+   cellCat.innerHTML = cat
+   var x = document.createElement("INPUT");
+   x.setAttribute("type", "checkbox");
+   x.setAttribute("id", "xxx")
+   var cellCheck = r.insertCell(-1)
+   cellCheck.appendChild(x);
+
+   var rows = []
+   for (let row of pats.rows) 
+   {
+      rows[row.rowIndex] = []
+      for(let cell of row.cells) 
+      {
+         let val = cell.innerText; // your code below
+         if(val) {
+            rows[row.rowIndex][cell.cellIndex] = val
+         }
+      }
+   }
+   localStorage.setItem("patterns", JSON.stringify(rows))
+   
+   parseExpenses()
+}
+
+function deletePatterns() {
+   var pats = document.getElementById("patterns");
+   var rows = []
+   for (let row of pats.rows) 
+   {
+      if(!row) continue
+      if(row.cells[2].childNodes[0].checked == true) {
+         continue;
+      }
+      rows[row.rowIndex] = []
+      for(let cell of row.cells) 
+      {
+         let val = cell.innerText; // your code below
+         if(val) {
+            rows[row.rowIndex][cell.cellIndex] = val
+         } 
+      }
+   }
+   localStorage.setItem("patterns", JSON.stringify(rows))
+   loadPatterns();
+   parseExpenses()
+} 
+/*
+var categories = [
+                  "Agape",
+                  "Auto",
+                  "Contributions",
+                  "Education",
+                  "Entertainment",
+                  "FastFood",
+                  "Financial",
+                  "Fitness",
+                  "Gifts",
+                  "Groceries",
+                  "Health/Beauty",
+                  "Home",
+                  "Home services",
+                  "Ignore",
+                  "Insurance",
+                  "Interest",
+                  "Medical",
+                  "Mortgage",
+                  "OneTime",
+                  "Pets",
+                  "Remodel",
+                  "Restaurants",
+                  "Shopping",
+                  "Shopping-John",
+                  "Shopping-Jannette",
+                  "Subscriptions",
+                  "Travel",
+                  "Utilities",
+                  "Work",
+]
+var hideCategories = [
+   "Ignore",
+   "Work"
+]
+var nonRecurring = [
+   "Remodel",
+   "Interest",
+   "OneTime"
+]
+*/
+</script>
+
