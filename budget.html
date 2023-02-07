@@ -285,6 +285,9 @@ function populateCategoryTable() {
          amnt = 0
       }
       dateFields = e.date.split('/')
+      if(dateFields[2].length == 2){
+         dateFields[2] = "20" + dateFields[2]
+      }
       dateColHead = dateFields[2] + "-" + dateFields[0]
       if(!(dateColHead in catExpenses[e.category])) {
          catExpenses[e.category][dateColHead] = amnt
@@ -559,22 +562,21 @@ function getExpense(lineIn, fileName) {
       if(fields.length >= 6){
          ex = new Expense(fields[1], "", fields[2], fields[5], 0)
       }
+      if(ex && ex.description.startsWith("AMZN Mktp")){
+         ex = null
+      }
    } else if(fileName.includes("Wells")) {
       if(fields.length >= 5){
          ex = new Expense(fields[0].replace(/\"/g,""), "", 
               fields[4].replace(/\"/g, ""), 
               fields[1].replace(/\"/g, ""), 0)
       }
-   } else if (fileName.includes("AmazonOrders")) {
-      if(fields.length >= 21) {
-         ex = new Expense(fields[0], "AmazonOrders", 
-              fields[1], fields[20].replace("$",""))
-      }
    } else if (fileName.includes("Amazon")) {
       if(fields.length >= 30) {
          ex = new Expense(fields[0], "Amazon", 
               fields[2], fields[29].replace("$",""))
          ex.orderId = fields[1]
+         ex.amount = "-" + ex.amount
       }
    }
    return ex
@@ -641,9 +643,20 @@ function loadExpenses() {
              var ex = getExpense(line,files[filesLoaded].name)  
              if(ex){
                 if(ex.category == "Amazon") {
-                   amazonEx.push(ex)
-                } else if(ex.category == "AmazonOrders") {
-                   amazonOrders.push(ex)
+                   if(ex.amount.startsWith("-Item Total")){
+                      continue
+                   }
+                   ex.index = fileExpenses.length
+                   if( files[filesLoaded].name.search("Jannette") >= 0 ){
+                     ex.category = "Shopping-Jannette"
+                  }
+                  if( files[filesLoaded].name.search("John") >= 0 ){
+                     ex.category = "Shopping-John"
+                  }
+                   //var cat = lookup(ex)
+                   //ex.category = cat
+                   fileExpenses.push(ex)
+
                 } else {
                    ex.index = fileExpenses.length
                    //var cat = lookup(ex)
